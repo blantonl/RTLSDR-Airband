@@ -36,11 +36,11 @@
 #define sscanf sscanf_s
 #define fscanf fscanf_s
 #else /* !_WIN32 */
-#if defined __arm__
+#if 0
 #include "hello_fft/mailbox.h"
 #include "hello_fft/gpu_fft.h"
 #else
-#include <xmmintrin.h>
+//#include <xmmintrin.h>
 #include <fftw3.h>
 #endif /* !__arm__ */
 #define ALIGN
@@ -83,7 +83,7 @@
 #define FFT_SIZE 512
 #define CHANNELS 8
 
-#if defined __arm__
+#if 0
 extern "C" void samplefft(GPU_FFT_COMPLEX* dest, unsigned char* buffer, float* window, float* levels);
 extern "C" void fftwave(float* dest, GPU_FFT_COMPLEX* src, int* sizes, int* bins);
 #define FFT_SIZE_LOG 9
@@ -362,7 +362,7 @@ void* mp3_check(void* params) {
 void demodulate() {
 
     // initialize fft engine
-#ifndef __arm__
+#if 1
     fftwf_plan fft;
     fftwf_complex* fftin;
     fftwf_complex* fftout;
@@ -413,7 +413,7 @@ void demodulate() {
     int device_num = 0;
     while (true) {
         if(do_exit) {
-#ifdef __arm__
+#if 0
             printf("Freeing GPU memory\n");
             gpu_fft_release(fft);
 #endif
@@ -432,7 +432,7 @@ void demodulate() {
             continue;
         }
 
-#ifdef __arm__
+#if 0
         for (int i = 0; i < FFT_BATCH; i++) {
             samplefft(fft->in + i * fft->step, dev->buffer + dev->bufs + i * speed2, window, levels);
         }
@@ -458,12 +458,14 @@ void demodulate() {
             }
         } else {
 #endif /* _WIN32 */
-            for (int i = 0; i < FFT_SIZE; i += 2) {
+            for (int i = 0; i < FFT_SIZE; i += 1) {
                 unsigned char* buf2 = dev->buffer + dev->bufs + i * 2;
-                __m128 a = _mm_set_ps(levels[*(buf2 + 3)], levels[*(buf2 + 2)], levels[*(buf2 + 1)], levels[*(buf2)]);
+/*                __m128 a = _mm_set_ps(levels[*(buf2 + 3)], levels[*(buf2 + 2)], levels[*(buf2 + 1)], levels[*(buf2)]);
                 __m128 b = _mm_load_ps(&window[i * 2]);
                 a = _mm_mul_ps(a, b);
-                _mm_store_ps(&fftin[i][0], a);
+                _mm_store_ps(&fftin[i][0], a); */
+                fftin[i][0] = levels[*(buf2)] * window[i*2];
+                fftin[i][1] = levels[*(buf2+1)] * window[i*2];
             }
 #ifdef _WIN32
         }
@@ -506,7 +508,7 @@ void demodulate() {
                     __m128 agccap = _mm_set1_ps(channel->agcmin * 4.5f);
                     for (int j = 0; j < WAVE_BATCH + AGC_EXTRA; j += 4) {
                         __m128 t = _mm_loadu_ps(channel->wavein + j);
-                        _mm_storeu_ps(channel->waveref + j, _mm_min_ps(t, agccap));
+                        _mm_storeu_ps(channel->waveref + j, _mm_min_ps(t, agccap)); 
                     }
 #ifdef _WIN32
                 }

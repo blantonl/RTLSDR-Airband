@@ -28,7 +28,7 @@ rtl_airband_vfp: $(OBJ) $(FFT) rtl_airband_vfp.o
 rtl_airband_neon: CFLAGS += -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
 rtl_airband_neon: $(OBJ) $(FFT) rtl_airband_neon.o
 
-rtl_airband: CFLAGS += -march=native
+rtl_airband: CFLAGS += -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
 rtl_airband: LDLIBS += -lfftw3f
 
 $(FFT):	hello_fft
