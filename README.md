@@ -6,6 +6,7 @@ RTLSDR Airband is intended for Airband reception and online streaming to service
 Features
 ---------------------
  * Decode up to eight AM channels per dongle (within bandwidth frequency range)
+ * 16 KHz AM filter bandwidth
  * Decode multiple dongles simutaneously
  * Auto squelch and Automatic Gain Control
  * MP3 encoding
@@ -170,7 +171,7 @@ Building
 
 Configuring
 --------------------
-All configurations are saved in config.txt file. Fields should be separated by space(s) or tab(s).
+All configurations are saved in /etc/rtlairband2_config.txt file. Fields should be separated by space(s) or tab(s).
 
 You may edit config.txt.example using a spreadsheet program.
 
@@ -184,6 +185,11 @@ Format:
     DongleNo NumChannels Gain CenterFreq FreqCorrection
     Hostname Port MountPoint Frequency Username Password
     .....
+    
+Example:
+    1
+    0       1       260     119800000       -10000
+    audio9.broadcastify.com 80      1234567       119800000       source  your_feed_password
 
 License
 --------------------
