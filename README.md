@@ -1,7 +1,7 @@
 RTLSDR-Airband
 =====================
 
-RTLSDR Airband is intended for Airband reception and online streaming to services such as liveatc.net
+RTLSDR Airband BCFY is intended for Airband reception and online streaming to www.broadcastify.com
 
 Features
 ---------------------
