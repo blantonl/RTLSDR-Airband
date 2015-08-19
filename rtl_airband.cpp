@@ -74,9 +74,9 @@
 
 #define BUF_SIZE 2560000
 #define SOURCE_RATE 2560000
-#define WAVE_RATE 8000
-#define WAVE_BATCH 1000
-#define WAVE_LEN 2048
+#define WAVE_RATE 16000
+#define WAVE_BATCH 2000
+#define WAVE_LEN 4096
 #define MP3_RATE 8000
 #define MAX_SHOUT_QUEUELEN 32768
 #define AGC_EXTRA 48
@@ -617,12 +617,12 @@ int main(int argc, char* argv[]) {
     // read config
     FILE* f;
 #ifdef _WIN32
-    if (fopen_s(&f, "config.txt", "r") != 0) {
+    if (fopen_s(&f, "rtl_airband2_config.txt", "r") != 0) {
 #else
-    f = fopen("config.txt", "r");
+    f = fopen("/etc/rtl_airband2_config.txt", "r");
     if (f == NULL) {
 #endif
-        printf("Config config.txt not found.\nStarting from 2014-07-05 a new config file format is required.\n");
+        printf("Config /etc/rtl_airband2_config.txt not found.\nStarting from 2014-07-05 a new config file format is required.\n");
         printf("Visit https ://www.github.com/microtony/RTLSDR-Airband for details.\n");
         error();
     }
