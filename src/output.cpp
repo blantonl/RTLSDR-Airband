@@ -583,6 +583,10 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
 
             pulse_write_stream(pdata, channel->mode, channel->waveout, channel->waveout_r, (size_t)WAVE_BATCH * sizeof(float));
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_BROADCASTIFY_CALLS
+        } else if (channel->outputs[k].type == O_BCFY_CALLS) {
+            bcfy_calls_process(channel, &channel->outputs[k]);
+#endif /* WITH_BROADCASTIFY_CALLS */
         }
     }
 }
@@ -612,6 +616,10 @@ void disable_channel_outputs(channel_t* channel) {
             pulse_data* pdata = (pulse_data*)(output->data);
             pulse_shutdown(pdata);
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_BROADCASTIFY_CALLS
+        } else if (output->type == O_BCFY_CALLS) {
+            bcfy_calls_disable((bcfy_calls_data*)(output->data));
+#endif /* WITH_BROADCASTIFY_CALLS */
         }
     }
 }

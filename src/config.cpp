@@ -252,6 +252,41 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 pdata->stream_name = strdup(buf);
             }
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_BROADCASTIFY_CALLS
+        } else if (!strncmp(outs[o]["type"], "broadcastify_calls", 18)) {
+            if (parsing_mixers) {
+                cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: broadcastify_calls outputs are not supported for mixers\n";
+                error();
+            }
+            if (channel->freq_count > 1) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: broadcastify_calls is not supported for scan mode channels\n";
+                error();
+            }
+            channel->outputs[oo].data = XCALLOC(1, sizeof(struct bcfy_calls_data));
+            channel->outputs[oo].type = O_BCFY_CALLS;
+
+            bcfy_calls_data* bdata = (bcfy_calls_data*)(channel->outputs[oo].data);
+
+            if (!outs[o].exists("api_key") || !outs[o].exists("system_id") || !outs[o].exists("tg")) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: broadcastify_calls requires api_key, system_id, and tg\n";
+                error();
+            }
+
+            bdata->api_key = strdup(outs[o]["api_key"]);
+            bdata->system_id = outs[o]["system_id"];
+            bdata->tg = outs[o]["tg"];
+            bdata->min_call_duration = outs[o].exists("min_call_duration") ? (float)(double)outs[o]["min_call_duration"] : 1.0f;
+            bdata->max_call_duration = outs[o].exists("max_call_duration") ? (int)outs[o]["max_call_duration"] : 120;
+            bdata->max_queue_depth = outs[o].exists("max_queue_depth") ? (int)outs[o]["max_queue_depth"] : 25;
+            bdata->use_dev_api = outs[o].exists("use_dev_api") ? (bool)outs[o]["use_dev_api"] : false;
+            bdata->test_mode = outs[o].exists("test_mode") ? (bool)outs[o]["test_mode"] : false;
+
+            bdata->sample_buf = NULL;
+            bdata->sample_buf_len = 0;
+            bdata->sample_buf_capacity = 0;
+
+            channel->outputs[oo].has_mp3_output = false;
+#endif /* WITH_BROADCASTIFY_CALLS */
         } else {
             if (parsing_mixers) {
                 cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";

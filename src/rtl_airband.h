@@ -44,6 +44,10 @@
 #include <pulse/stream.h>
 #endif /* WITH_PULSEAUDIO */
 
+#ifdef WITH_BROADCASTIFY_CALLS
+#include "broadcastify_calls.h"
+#endif /* WITH_BROADCASTIFY_CALLS */
+
 #include "filters.h"
 #include "input-common.h"  // input_t
 #include "logging.h"
@@ -111,6 +115,10 @@ enum output_type {
     ,
     O_PULSE
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_BROADCASTIFY_CALLS
+    ,
+    O_BCFY_CALLS
+#endif /* WITH_BROADCASTIFY_CALLS */
 };
 
 struct icecast_data {

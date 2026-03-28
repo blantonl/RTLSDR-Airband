@@ -282,6 +282,13 @@ bool init_output(channel_t* channel, output_t* output) {
         pulse_init();
         pulse_setup((pulse_data*)(output->data), channel->mode);
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_BROADCASTIFY_CALLS
+    } else if (output->type == O_BCFY_CALLS) {
+        bcfy_calls_data* bdata = (bcfy_calls_data*)(output->data);
+        bdata->sample_buf_capacity = WAVE_RATE;
+        bdata->sample_buf = (float*)XCALLOC(bdata->sample_buf_capacity, sizeof(float));
+        bdata->sample_buf_len = 0;
+#endif /* WITH_BROADCASTIFY_CALLS */
     }
 
     return true;
@@ -869,6 +876,9 @@ int main(int argc, char* argv[]) {
 
         devices = (device_t*)XCALLOC(device_count, sizeof(device_t));
         shout_init();
+#ifdef WITH_BROADCASTIFY_CALLS
+        bcfy_calls_init();
+#endif /* WITH_BROADCASTIFY_CALLS */
 
         if (do_syslog) {
             openlog("rtl_airband", LOG_PID, LOG_DAEMON);
@@ -1137,6 +1147,10 @@ int main(int argc, char* argv[]) {
         output_params[i].mp3_signal->send();
         pthread_join(output_threads[i], NULL);
     }
+
+#ifdef WITH_BROADCASTIFY_CALLS
+    bcfy_calls_shutdown();
+#endif /* WITH_BROADCASTIFY_CALLS */
 
     for (int i = 0; i < device_count; i++) {
         device_t* dev = devices + i;

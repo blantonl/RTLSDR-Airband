@@ -27,6 +27,7 @@
 #cmakedefine WITH_PULSEAUDIO
 #cmakedefine NFM
 #cmakedefine WITH_BCM_VC
+#cmakedefine WITH_BROADCASTIFY_CALLS
 #cmakedefine LIBSHOUT_HAS_TLS
 #cmakedefine LIBSHOUT_HAS_CONTENT_FORMAT
 #define SINCOSF @SINCOSF@
