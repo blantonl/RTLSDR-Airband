@@ -41,6 +41,12 @@
 #define BCFY_POST_TIMEOUT 30L
 #define BCFY_PUT_TIMEOUT 60L
 
+enum upload_result {
+    UPLOAD_SUCCESS,
+    UPLOAD_FAIL_PERMANENT,
+    UPLOAD_FAIL_TRANSIENT,
+};
+
 #define BCFY_MP3_OUT_SAMPLERATE 8000
 #define BCFY_MP3_BITRATE 16
 // Generous buffer: 1.25 * bitrate * duration + padding
@@ -147,14 +153,14 @@ static unsigned char* encode_mp3(bcfy_call_record* rec, size_t* out_len) {
     return mp3_buf;
 }
 
-static bool do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3_len) {
+static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3_len) {
     const char* api_url = rec->use_dev_api ? BCFY_CALLS_DEV_URL : BCFY_CALLS_URL;
 
     // Step 1: POST metadata to register the call
     CURL* curl = curl_easy_init();
     if (!curl) {
         log(LOG_ERR, "Broadcastify Calls: curl_easy_init failed\n");
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     // Build multipart form data (API uses aws-lambda-multipart-parser)
@@ -232,26 +238,26 @@ static bool do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3
     if (res != CURLE_OK) {
         log(LOG_WARNING, "Broadcastify Calls: POST failed: %s\n", curl_easy_strerror(res));
         free(response.buf);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     if (http_code >= 400 && http_code < 500) {
         log(LOG_WARNING, "Broadcastify Calls: POST returned HTTP %ld: %s\n", http_code, response.buf);
         free(response.buf);
-        return false;  // permanent error, don't retry
+        return UPLOAD_FAIL_PERMANENT;
     }
 
     if (http_code >= 500) {
         log(LOG_WARNING, "Broadcastify Calls: POST returned HTTP %ld (server error)\n", http_code);
         free(response.buf);
-        return false;  // transient, caller will retry
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     // Parse response: "0 <upload-url>" or "1 SKIPPED..." or "<error-code> <message>"
     if (response.len < 2) {
         log(LOG_WARNING, "Broadcastify Calls: empty response from API\n");
         free(response.buf);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     if (response.buf[0] == '1' && response.buf[1] == ' ') {
@@ -260,18 +266,18 @@ static bool do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3
             log(LOG_INFO, "Broadcastify Calls: call skipped (duplicate): tg=%d freq=%d ts=%ld\n",
                 rec->tg, rec->freq, (long)rec->ts);
             free(response.buf);
-            return true;  // not an error, another source already uploaded this call
+            return UPLOAD_SUCCESS;  // not an error, another source already uploaded this call
         }
         // All other "1 ..." responses are permanent API errors, don't retry
         log(LOG_WARNING, "Broadcastify Calls: API error: %s\n", response.buf);
         free(response.buf);
-        return true;
+        return UPLOAD_FAIL_PERMANENT;
     }
 
     if (response.buf[0] != '0' || response.buf[1] != ' ') {
         log(LOG_WARNING, "Broadcastify Calls: unexpected API response: %s\n", response.buf);
         free(response.buf);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     // Extract upload URL (everything after "0 ")
@@ -293,7 +299,7 @@ static bool do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3
     if (!curl) {
         log(LOG_ERR, "Broadcastify Calls: curl_easy_init failed for PUT\n");
         free(response.buf);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     struct curl_read_ctx read_ctx = { mp3_data, mp3_len, 0 };
@@ -318,17 +324,17 @@ static bool do_upload(bcfy_call_record* rec, unsigned char* mp3_data, size_t mp3
 
     if (res != CURLE_OK) {
         log(LOG_WARNING, "Broadcastify Calls: PUT failed: %s\n", curl_easy_strerror(res));
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     if (http_code >= 400) {
         log(LOG_WARNING, "Broadcastify Calls: PUT returned HTTP %ld\n", http_code);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     log(LOG_INFO, "Broadcastify Calls: uploaded call tg=%d freq=%d duration=%.1fs\n",
         rec->tg, rec->freq, rec->duration);
-    return true;
+    return UPLOAD_SUCCESS;
 }
 
 static void encode_and_upload(bcfy_call_record* rec) {
@@ -338,17 +344,20 @@ static void encode_and_upload(bcfy_call_record* rec) {
         return;
     }
 
-    bool success = false;
-    for (int attempt = 0; attempt < BCFY_RETRY_COUNT && !success; attempt++) {
+    enum upload_result result = UPLOAD_FAIL_TRANSIENT;
+    for (int attempt = 0; attempt < BCFY_RETRY_COUNT && result == UPLOAD_FAIL_TRANSIENT; attempt++) {
         if (attempt > 0) {
             int delay = 1 << attempt;  // 2s, 4s
             log(LOG_INFO, "Broadcastify Calls: retry %d/%d in %ds\n", attempt + 1, BCFY_RETRY_COUNT, delay);
             sleep(delay);
         }
-        success = do_upload(rec, mp3_data, mp3_len);
+        result = do_upload(rec, mp3_data, mp3_len);
     }
 
-    if (!success) {
+    if (result == UPLOAD_FAIL_PERMANENT) {
+        log(LOG_WARNING, "Broadcastify Calls: permanent failure uploading call tg=%d freq=%d, not retrying\n",
+            rec->tg, rec->freq);
+    } else if (result == UPLOAD_FAIL_TRANSIENT) {
         log(LOG_WARNING, "Broadcastify Calls: failed to upload call tg=%d freq=%d after %d attempts\n",
             rec->tg, rec->freq, BCFY_RETRY_COUNT);
     }
@@ -390,6 +399,11 @@ static void* upload_thread_func(void*) {
     // Drain remaining items on shutdown
     int drained = 0;
     pthread_mutex_lock(&queue_mutex);
+    if (!upload_queue.empty()) {
+        int remaining = (int)upload_queue.size();
+        log(LOG_INFO, "Broadcastify Calls: draining up to %d queued calls before shutdown\n",
+            remaining < BCFY_MAX_DRAIN_ON_SHUTDOWN ? remaining : BCFY_MAX_DRAIN_ON_SHUTDOWN);
+    }
     while (!upload_queue.empty() && drained < BCFY_MAX_DRAIN_ON_SHUTDOWN) {
         bcfy_call_record* rec = upload_queue.front();
         upload_queue.pop();

@@ -273,9 +273,9 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             }
 
             bdata->api_key = strdup(outs[o]["api_key"]);
-            bdata->system_id = outs[o]["system_id"];
-            bdata->tg = outs[o]["tg"];
-            bdata->min_call_duration = outs[o].exists("min_call_duration") ? (float)(double)outs[o]["min_call_duration"] : 1.0f;
+            bdata->system_id = (int)outs[o]["system_id"];
+            bdata->tg = (int)outs[o]["tg"];
+            bdata->min_call_duration = outs[o].exists("min_call_duration") ? (float)outs[o]["min_call_duration"] : 1.0f;
             bdata->max_call_duration = outs[o].exists("max_call_duration") ? (int)outs[o]["max_call_duration"] : 120;
             bdata->max_queue_depth = outs[o].exists("max_queue_depth") ? (int)outs[o]["max_queue_depth"] : 25;
             bdata->use_dev_api = outs[o].exists("use_dev_api") ? (bool)outs[o]["use_dev_api"] : false;
@@ -286,6 +286,10 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             bdata->sample_buf_capacity = 0;
 
             channel->outputs[oo].has_mp3_output = false;
+#else
+        } else if (!strncmp(outs[o]["type"], "broadcastify_calls", 18)) {
+            cerr << "Warning: broadcastify_calls output configured but not compiled in (requires -DBROADCASTIFY_CALLS=ON)\n";
+            continue;
 #endif /* WITH_BROADCASTIFY_CALLS */
         } else {
             if (parsing_mixers) {
