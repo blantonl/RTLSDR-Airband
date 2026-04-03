@@ -291,7 +291,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
     if (url_len == 0) {
         log(LOG_WARNING, "Broadcastify Calls: empty upload URL in response\n");
         free(response.buf);
-        return false;
+        return UPLOAD_FAIL_TRANSIENT;
     }
 
     // Step 2: PUT audio to the one-time upload URL
