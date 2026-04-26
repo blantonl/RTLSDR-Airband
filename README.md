@@ -23,11 +23,13 @@ All four features are off-by-default or auto-detected — drop in an existing up
 
 ```bash
 sudo apt install libcurl4-openssl-dev   # for broadcastify_calls
-git clone -b feature/broadcastify-calls-output https://github.com/blantonl/RTLSDR-Airband.git
+git clone https://github.com/blantonl/RTLSDR-Airband.git
 cd RTLSDR-Airband
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DBROADCASTIFY_CALLS=ON
 cmake --build build -j$(nproc)
 ```
+
+To pin to a specific release rather than tracking `main`, check out the tag after cloning, e.g. `git checkout bcfy-v5.2.0`.
 
 Other useful CMake options carry over from upstream: `-DNFM=ON`, `-DPLATFORM=generic|native|rpiv2`, `-DBUILD_UNITTESTS=TRUE`.
 
@@ -52,13 +54,12 @@ This fork is based on [rtl-airband/RTLSDR-Airband](https://github.com/rtl-airban
 
 ## Credits and thanks
 
-The bulk of the work is upstream's. Thanks especially to charlie-foxtrot for maintaining the rtl-airband fork, and to everyone listed in upstream's credits:
+The bulk of the work is upstream's. Thanks especially to [charlie-foxtrot](https://github.com/charlie-foxtrot) for maintaining the rtl-airband fork, and to everyone listed in upstream's credits:
 
 * Dave Pascoe
 * SDR Guru
 * Marcus Ströbel
 * strix-technica
-* charlie-foxtrot
 
 This fork's additions are maintained by [@blantonl](https://github.com/blantonl).
 
