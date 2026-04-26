@@ -1,60 +1,66 @@
-# RTLSDR-Airband
+# RTLSDR-Airband (blantonl fork)
 
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main)
+A fork of [rtl-airband/RTLSDR-Airband](https://github.com/rtl-airband/RTLSDR-Airband) that adds a native **Broadcastify Calls** output type and a handful of demodulation improvements aimed at feeders running tightly-spaced air band channels and higher-precision SDR hardware (Airspy in particular).
 
-## Fork notes (blantonl/RTLSDR-Airband)
+**Latest release:** [`bcfy-v5.2.0`](https://github.com/blantonl/RTLSDR-Airband/releases/tag/bcfy-v5.2.0) (based on upstream `v5.1.6`)
 
-This fork tracks [rtl-airband/RTLSDR-Airband](https://github.com/rtl-airband/RTLSDR-Airband) and adds the following capabilities on top of upstream `v5.1.6`:
+## Why this fork exists
 
-- **Broadcastify Calls output** — a new `broadcastify_calls` output type that buffers each transmission, encodes it to MP3, and uploads it to the [Broadcastify Calls](https://www.broadcastify.com/calls/) API. Build with `-DBROADCASTIFY_CALLS=ON`. See [Broadcastify-Calls-Output.md](Broadcastify-Calls-Output.md).
-- **Configurable lowpass filter order** — per-channel `filter_order` setting (`2`, `4`, or `6`) controls Bessel IIR steepness for adjacent-channel rejection. Default `2` matches upstream behaviour; `6` gives 36 dB/octave rolloff for 8.33 kHz spacing.
-- **Multi-bin FFT extraction** — per-channel `extract_bins` setting (odd, ≥1) sums adjacent FFT bins in the complex domain before computing magnitude, so AM sidebands aren't truncated when running with a larger `fft_size`.
-- **SoapySDR sample format selection** — Airspy devices now auto-prefer `CF32`/`CS16` instead of the 8-bit native format (preserving the 12-bit ADC dynamic range), and any SoapySDR device may be pinned with an explicit `sample_format` config key (`"CU8"`, `"CS8"`, `"CS16"`, `"CF32"`).
+Upstream RTLSDR-Airband targets continuous Icecast streaming. Broadcastify Calls is a different shape — discrete per-transmission MP3 uploads to an HTTP API — and there was no first-class output type for it. This fork adds one, plus the signal-processing knobs needed to squeeze acceptable audio out of conventional channels with neighbours close in frequency.
 
-See [`config/channel_isolation.conf`](config/channel_isolation.conf) for a worked example combining `fft_size`, `extract_bins`, `bandwidth`, and `filter_order` for tight channel spacing.
+## What this fork adds on top of upstream
 
----
+- **`broadcastify_calls` output type.** Buffers each transmission while squelch is open, encodes to MP3 with LAME, and uploads to the [Broadcastify Calls](https://www.broadcastify.com/calls/) API using the standard two-step flow (POST metadata → presigned PUT). Retries with exponential backoff and a bounded queue with oldest-drop. Build with `-DBROADCASTIFY_CALLS=ON` (requires `libcurl`). See [Broadcastify-Calls-Output.md](Broadcastify-Calls-Output.md).
+- **Configurable lowpass filter order** — per-channel `filter_order` (`2`, `4`, or `6`) controls Bessel IIR steepness on the post-FFT channel filter. Default `2` matches upstream (12 dB/oct). `6` gives 36 dB/octave rolloff for 8.33 kHz European spacing or hot adjacent transmitters.
+- **Multi-bin FFT extraction** — per-channel `extract_bins` (odd, ≥1) sums adjacent FFT bins in the complex domain before computing magnitude, so AM sidebands aren't truncated when running with a larger `fft_size`. Default `1` matches upstream.
+- **SoapySDR sample format selection** — Airspy devices auto-prefer `CF32` then `CS16` instead of the 8-bit native format (preserving the 12-bit ADC dynamic range), and any SoapySDR device can be pinned with an explicit `sample_format` config key (`"CU8"`, `"CS8"`, `"CS16"`, `"CF32"`).
 
-Changes as of v5.1.0:
- - License is now GPLv2 [#503](https://github.com/rtl-airband/RTLSDR-Airband/discussions/503)
+See [`config/channel_isolation.conf`](config/channel_isolation.conf) for a worked example combining `fft_size`, `extract_bins`, `bandwidth`, and `filter_order` for tight spacing, and [NEWS.md](NEWS.md) for the per-release fork changelog.
 
-NOTE: Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband see [#502](https://github.com/rtl-airband/RTLSDR-Airband/discussions/502) for info
+All four features are off-by-default or auto-detected — drop in an existing upstream `rtl_airband.conf` and behaviour is identical.
 
-Changes as of v5.0.0:
- - PRs will be opened directly against `main` and the `unstable` branch will no longer be used
- - Version tags will be automatically created on each merge to `main`
- - A release will be created on each `major` or `minor` version tag but not `minor` tags
- - Checking out `main` is recommended over using a release artifact to stay on the latest version
- - This repo has significantly diverged from the original project [microtony/RTLSDR-Airband](https://github.com/microtony/RTLSDR-Airband) so it has been been detached (ie no longer a fork).
- - Specific build support for `rpiv1`, `armv7-generic`, and `armv8-generic` have been deprecated for the new default `native`, see [#447](https://github.com/rtl-airband/RTLSDR-Airband/discussions/447)
+## Quick start
 
+```bash
+sudo apt install libcurl4-openssl-dev   # for broadcastify_calls
+git clone -b feature/broadcastify-calls-output https://github.com/blantonl/RTLSDR-Airband.git
+cd RTLSDR-Airband
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBROADCASTIFY_CALLS=ON
+cmake --build build -j$(nproc)
+```
+
+Other useful CMake options carry over from upstream: `-DNFM=ON`, `-DPLATFORM=generic|native|rpiv2`, `-DBUILD_UNITTESTS=TRUE`.
 
 ## Overview
 
-RTLSDR-Airband receives analog radio voice channels and produces
-audio streams which can be routed to various outputs, such as online
-streaming services like LiveATC.net. Originally the only SDR type
-supported by the program was Realtek DVB-T dongle (hence the project's
-name). However, thanks to SoapySDR vendor-neutral SDR library, other
-radios are now supported as well.
+RTLSDR-Airband receives analog radio voice channels and produces audio streams which can be routed to various outputs — Icecast, file output, raw output, and (in this fork) Broadcastify Calls. Originally the only SDR type supported was the Realtek DVB-T dongle (hence the name); thanks to the SoapySDR vendor-neutral SDR library, other radios are supported as well.
 
 ## Documentation
 
-User's manual is now on the [wiki](https://github.com/rtl-airband/RTLSDR-Airband/wiki).
+The user's manual lives on the upstream [wiki](https://github.com/rtl-airband/RTLSDR-Airband/wiki) and applies in full to this fork. Fork-specific docs:
+
+- [Broadcastify-Calls-Output.md](Broadcastify-Calls-Output.md) — `broadcastify_calls` output type configuration
+- [`config/channel_isolation.conf`](config/channel_isolation.conf) — worked example of channel isolation tuning
+- [NEWS.md](NEWS.md) — fork release history
+
+## Upstream lineage
+
+This fork is based on [rtl-airband/RTLSDR-Airband](https://github.com/rtl-airband/RTLSDR-Airband). Notable upstream context retained for reference:
+
+- **As of upstream v5.1.0:** License is now GPLv2 ([#503](https://github.com/rtl-airband/RTLSDR-Airband/discussions/503)). Upstream repo URL moved to https://github.com/rtl-airband/RTLSDR-Airband ([#502](https://github.com/rtl-airband/RTLSDR-Airband/discussions/502)).
+- **As of upstream v5.0.0:** Version tags auto-generated on merge to `main`; releases cut on major/minor tags. Specific build support for `rpiv1`, `armv7-generic`, and `armv8-generic` was deprecated in favour of `native` ([#447](https://github.com/rtl-airband/RTLSDR-Airband/discussions/447)). Upstream itself was detached from the original [microtony/RTLSDR-Airband](https://github.com/microtony/RTLSDR-Airband) project at this point.
 
 ## Credits and thanks
 
-I hereby express my gratitude to everybody who helped with the development and testing
-of RTLSDR-Airband. Special thanks go to:
+The bulk of the work is upstream's. Thanks especially to charlie-foxtrot for maintaining the rtl-airband fork, and to everyone listed in upstream's credits:
 
 * Dave Pascoe
 * SDR Guru
 * Marcus Ströbel
 * strix-technica
 * charlie-foxtrot
+
+This fork's additions are maintained by [@blantonl](https://github.com/blantonl).
 
 ## License
 
