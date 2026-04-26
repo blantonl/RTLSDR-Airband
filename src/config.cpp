@@ -631,6 +631,14 @@ static int parse_channels(libconfig::Setting& chans, device_t* dev, int i) {
                 error();
             }
         }
+        int filter_order = 2;  // default: 2nd order (12 dB/octave)
+        if (chans[j].exists("filter_order")) {
+            filter_order = (int)chans[j]["filter_order"];
+            if (filter_order != 2 && filter_order != 4 && filter_order != 6) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "]: filter_order must be 2, 4, or 6\n";
+                error();
+            }
+        }
         if (chans[j].exists("bandwidth")) {
             channel->needs_raw_iq = 1;
 
@@ -643,7 +651,7 @@ static int parse_channels(libconfig::Setting& chans, device_t* dev, int i) {
                     } else if (bandwidth < 0) {
                         cerr << "devices.[" << i << "] channels.[" << j << "] freq.[" << f << "]: bandwidth value '" << bandwidth << "' invalid, ignoring\n";
                     } else {
-                        channel->freqlist[f].lowpass_filter = LowpassFilter((float)bandwidth / 2, WAVE_RATE);
+                        channel->freqlist[f].lowpass_filter = LowpassFilter((float)bandwidth / 2, WAVE_RATE, filter_order);
                     }
                 }
             } else {
@@ -654,7 +662,7 @@ static int parse_channels(libconfig::Setting& chans, device_t* dev, int i) {
                     cerr << "devices.[" << i << "] channels.[" << j << "]: bandwidth value '" << bandwidth << "' invalid, ignoring\n";
                 } else {
                     for (int f = 0; f < channel->freq_count; f++) {
-                        channel->freqlist[f].lowpass_filter = LowpassFilter((float)bandwidth / 2, WAVE_RATE);
+                        channel->freqlist[f].lowpass_filter = LowpassFilter((float)bandwidth / 2, WAVE_RATE, filter_order);
                     }
                 }
             }
@@ -708,6 +716,16 @@ static int parse_channels(libconfig::Setting& chans, device_t* dev, int i) {
         dev->base_bins[jj] = dev->bins[jj] =
             (size_t)ceil((channel->freqlist[0].frequency + dev->input->sample_rate - dev->input->centerfreq) / (double)(dev->input->sample_rate / fft_size) - 1.0) % fft_size;
         debug_print("bins[%d]: %zu\n", jj, dev->bins[jj]);
+
+        dev->extract_bins[jj] = 1;  // default: single bin extraction
+        if (chans[j].exists("extract_bins")) {
+            int eb = (int)chans[j]["extract_bins"];
+            if (eb < 1 || eb > (int)fft_size / 2 || (eb % 2) == 0) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "]: extract_bins must be a positive odd number (1, 3, 5, ...)\n";
+                error();
+            }
+            dev->extract_bins[jj] = eb;
+        }
 
 #ifdef NFM
         for (int f = 0; f < channel->freq_count; f++) {
@@ -855,6 +873,7 @@ int parse_devices(libconfig::Setting& devs) {
         dev->channels = (channel_t*)XCALLOC(chans.getLength(), sizeof(channel_t));
         dev->bins = (size_t*)XCALLOC(chans.getLength(), sizeof(size_t));
         dev->base_bins = (size_t*)XCALLOC(chans.getLength(), sizeof(size_t));
+        dev->extract_bins = (int*)XCALLOC(chans.getLength(), sizeof(int));
         dev->channel_count = 0;
         int channel_count = parse_channels(chans, dev, i);
         if (channel_count < 1) {
@@ -868,6 +887,7 @@ int parse_devices(libconfig::Setting& devs) {
         dev->channels = (channel_t*)XREALLOC(dev->channels, channel_count * sizeof(channel_t));
         dev->bins = (size_t*)XREALLOC(dev->bins, channel_count * sizeof(size_t));
         dev->base_bins = (size_t*)XREALLOC(dev->base_bins, channel_count * sizeof(size_t));
+        dev->extract_bins = (int*)XREALLOC(dev->extract_bins, channel_count * sizeof(int));
         dev->channel_count = channel_count;
         devcnt++;
     }

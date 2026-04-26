@@ -494,26 +494,73 @@ void* demodulate(void* params) {
             float* wavein = dev->channels[i].wavein + dev->waveend;
             __builtin_prefetch(wavein, 1);
             const int bin = dev->bins[i];
-            const GPU_FFT_COMPLEX* fftout = fft->out + bin;
-            for (int j = 0; j < FFT_BATCH; j++, ++wavein, fftout += fft->step)
-                *wavein = sqrtf(fftout->im * fftout->im + fftout->re * fftout->re);
+            int eb = dev->extract_bins[i];
+            if (eb <= 1) {
+                const GPU_FFT_COMPLEX* fftout_ptr = fft->out + bin;
+                for (int j = 0; j < FFT_BATCH; j++, ++wavein, fftout_ptr += fft->step)
+                    *wavein = sqrtf(fftout_ptr->im * fftout_ptr->im + fftout_ptr->re * fftout_ptr->re);
+            } else {
+                int half = eb / 2;
+                for (int j = 0; j < FFT_BATCH; j++, ++wavein) {
+                    struct GPU_FFT_COMPLEX* base = fft->out + j * fft->step;
+                    float sum_re = 0.0f, sum_im = 0.0f;
+                    for (int b = -half; b <= half; b++) {
+                        size_t bin_idx = ((size_t)(bin + b + (int)fft_size)) % fft_size;
+                        sum_re += base[bin_idx].re;
+                        sum_im += base[bin_idx].im;
+                    }
+                    *wavein = sqrtf(sum_re * sum_re + sum_im * sum_im);
+                }
+            }
         }
         for (int j = 0; j < dev->channel_count; j++) {
             if (dev->channels[j].needs_raw_iq) {
+                int eb = dev->extract_bins[j];
                 struct GPU_FFT_COMPLEX* ptr = fft->out;
                 for (int job = 0; job < FFT_BATCH; job++) {
-                    dev->channels[j].iq_in[2 * (dev->waveend + job)] = ptr[dev->bins[j]].re;
-                    dev->channels[j].iq_in[2 * (dev->waveend + job) + 1] = ptr[dev->bins[j]].im;
+                    if (eb <= 1) {
+                        dev->channels[j].iq_in[2 * (dev->waveend + job)] = ptr[dev->bins[j]].re;
+                        dev->channels[j].iq_in[2 * (dev->waveend + job) + 1] = ptr[dev->bins[j]].im;
+                    } else {
+                        int half = eb / 2;
+                        float sum_re = 0.0f, sum_im = 0.0f;
+                        for (int b = -half; b <= half; b++) {
+                            size_t bin_idx = ((size_t)((int)dev->bins[j] + b + (int)fft_size)) % fft_size;
+                            sum_re += ptr[bin_idx].re;
+                            sum_im += ptr[bin_idx].im;
+                        }
+                        dev->channels[j].iq_in[2 * (dev->waveend + job)] = sum_re;
+                        dev->channels[j].iq_in[2 * (dev->waveend + job) + 1] = sum_im;
+                    }
                     ptr += fft->step;
                 }
             }
         }
 #else
         for (int j = 0; j < dev->channel_count; j++) {
-            dev->channels[j].wavein[dev->waveend] = sqrtf(fftout[dev->bins[j]][0] * fftout[dev->bins[j]][0] + fftout[dev->bins[j]][1] * fftout[dev->bins[j]][1]);
-            if (dev->channels[j].needs_raw_iq) {
-                dev->channels[j].iq_in[2 * dev->waveend] = fftout[dev->bins[j]][0];
-                dev->channels[j].iq_in[2 * dev->waveend + 1] = fftout[dev->bins[j]][1];
+            int eb = dev->extract_bins[j];
+            if (eb <= 1) {
+                // Single-bin extraction (original fast path)
+                dev->channels[j].wavein[dev->waveend] = sqrtf(fftout[dev->bins[j]][0] * fftout[dev->bins[j]][0] + fftout[dev->bins[j]][1] * fftout[dev->bins[j]][1]);
+                if (dev->channels[j].needs_raw_iq) {
+                    dev->channels[j].iq_in[2 * dev->waveend] = fftout[dev->bins[j]][0];
+                    dev->channels[j].iq_in[2 * dev->waveend + 1] = fftout[dev->bins[j]][1];
+                }
+            } else {
+                // Multi-bin extraction: sum adjacent bins in complex domain before computing magnitude.
+                // This captures sideband energy for AM channels wider than a single FFT bin.
+                int half = eb / 2;
+                float sum_re = 0.0f, sum_im = 0.0f;
+                for (int b = -half; b <= half; b++) {
+                    size_t bin_idx = ((size_t)((int)dev->bins[j] + b + (int)fft_size)) % fft_size;
+                    sum_re += fftout[bin_idx][0];
+                    sum_im += fftout[bin_idx][1];
+                }
+                dev->channels[j].wavein[dev->waveend] = sqrtf(sum_re * sum_re + sum_im * sum_im);
+                if (dev->channels[j].needs_raw_iq) {
+                    dev->channels[j].iq_in[2 * dev->waveend] = sum_re;
+                    dev->channels[j].iq_in[2 * dev->waveend + 1] = sum_im;
+                }
             }
         }
 #endif /* WITH_BCM_VC */

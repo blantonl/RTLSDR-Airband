@@ -22,6 +22,9 @@
 
 #include <complex>
 
+#define LOWPASS_MAX_ORDER 6
+#define LOWPASS_MAX_SECTIONS (LOWPASS_MAX_ORDER / 2)
+
 class NotchFilter {
    public:
     NotchFilter(void);
@@ -38,10 +41,18 @@ class NotchFilter {
     float y[3];
 };
 
+// A single second-order (biquad) IIR filter section
+struct BiquadSection {
+    float ycoeffs[3];
+    float gain;
+    std::complex<float> xv[3];
+    std::complex<float> yv[3];
+};
+
 class LowpassFilter {
    public:
     LowpassFilter(void);
-    LowpassFilter(float freq, float sample_freq);
+    LowpassFilter(float freq, float sample_freq, int order = 2);
     void apply(float& r, float& j);
     bool enabled(void) const { return enabled_; }
 
@@ -51,13 +62,11 @@ class LowpassFilter {
     static void multin(std::complex<double> w, int npz, std::complex<double> coeffs[]);
     static std::complex<double> evaluate(std::complex<double> topco[], int nz, std::complex<double> botco[], int np, std::complex<double> z);
     static std::complex<double> eval(std::complex<double> coeffs[], int npz, std::complex<double> z);
+    void init_section(int section_idx, std::complex<double> pole, float freq, float sample_freq);
 
     bool enabled_;
-    float ycoeffs[3];
-    float gain;
-
-    std::complex<float> xv[3];
-    std::complex<float> yv[3];
+    int num_sections_;  // number of biquad sections (order / 2)
+    BiquadSection sections_[LOWPASS_MAX_SECTIONS];
 };
 
 #endif /* _FILTERS_H */

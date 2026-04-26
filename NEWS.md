@@ -2,6 +2,17 @@
 
 This file will no longer be updated with each release, for changes between releases, see PRs merged to the repo
 
+## Fork: blantonl/RTLSDR-Airband (based on upstream v5.1.6)
+
+Changes layered on top of [rtl-airband/RTLSDR-Airband](https://github.com/rtl-airband/RTLSDR-Airband) `v5.1.6`:
+
+* Add `broadcastify_calls` output type. Buffers per-transmission audio while squelch is open, encodes to MP3 with LAME, and uploads to the Broadcastify Calls API using the two-step (POST metadata → presigned PUT) flow. Supports retry with exponential backoff and a bounded upload queue. Build with `-DBROADCASTIFY_CALLS=ON`.
+* Add per-channel `filter_order` config (2 / 4 / 6) for the post-FFT Bessel IIR lowpass filter. Default `2` matches prior behaviour; higher orders provide steeper rolloff for tight channel spacing.
+* Add per-channel `extract_bins` config (odd, ≥1). Sums adjacent FFT bins in the complex (I/Q) domain before computing magnitude so AM sidebands aren't truncated when running with a larger `fft_size`. Default `1` matches prior behaviour.
+* Add SoapySDR `sample_format` config key (`"CU8"`, `"CS8"`, `"CS16"`, `"CF32"`) to explicitly pin the stream format for any SoapySDR device.
+* Auto-select higher-precision sample formats (`CF32` then `CS16`) for Airspy devices instead of falling through to the 8-bit native format, preserving the 12-bit ADC dynamic range.
+* Add `config/channel_isolation.conf` example walking through `fft_size`, `extract_bins`, `bandwidth`, and `filter_order` together.
+
 Version 5.0.0 (Jan 21, 2024):
 
 * NOTE: Going forward a release tag will be automatically created on each merge to `main`, and changes will not be reflected in this file.  For changes between versions see the repo's [release history](https://github.com/rtl-airband/RTLSDR-Airband/releases).

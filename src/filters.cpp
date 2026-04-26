@@ -64,38 +64,94 @@ void NotchFilter::apply(float& value) {
 }
 
 // Default constructor is no filter
-LowpassFilter::LowpassFilter(void) : enabled_(false) {}
+LowpassFilter::LowpassFilter(void) : enabled_(false), num_sections_(0) {}
 
-// 2nd order lowpass Bessel filter, based entirely on a simplification of https://www-users.cs.york.ac.uk/~fisher/mkfilter/
-LowpassFilter::LowpassFilter(float freq, float sample_freq) : enabled_(true) {
-    if (freq <= 0.0) {
-        debug_print("Invalid frequency %f Hz, disabling lowpass filter\n", freq);
-        enabled_ = false;
-        return;
-    }
+// Normalized Bessel poles (s-domain) for orders 2, 4, 6.
+// Only one pole per conjugate pair is listed; the conjugate is derived automatically.
+// Source: https://www-users.cs.york.ac.uk/~fisher/mkfilter/
+//
+// Order 2: 1 conjugate pair
+static const complex<double> bessel_poles_2[] = {
+    complex<double>(-1.10160133059e+00, 6.36009824757e-01),
+};
 
-    debug_print("Adding lowpass filter at %f Hz with a sample rate of %f\n", freq, sample_freq);
+// Order 4: 2 conjugate pairs
+static const complex<double> bessel_poles_4[] = {
+    complex<double>(-1.37006783055e+00, 4.10249717494e-01),
+    complex<double>(-9.95208764350e-01, 1.25710573945e+00),
+};
 
+// Order 6: 3 conjugate pairs
+static const complex<double> bessel_poles_6[] = {
+    complex<double>(-1.57149040362e+00, 3.20896374221e-01),
+    complex<double>(-1.38185809760e+00, 9.71471890712e-01),
+    complex<double>(-9.30656522947e-01, 1.66186326894e+00),
+};
+
+// Initialize one biquad section from a single conjugate pole pair
+void LowpassFilter::init_section(int section_idx, complex<double> pole, float freq, float sample_freq) {
     double raw_alpha = (double)freq / sample_freq;
     double warped_alpha = tan(M_PI * raw_alpha) / M_PI;
 
     complex<double> zeros[2] = {-1.0, -1.0};
     complex<double> poles[2];
-    poles[0] = blt(M_PI * 2 * warped_alpha * complex<double>(-1.10160133059e+00, 6.36009824757e-01));
-    poles[1] = blt(M_PI * 2 * warped_alpha * conj(complex<double>(-1.10160133059e+00, 6.36009824757e-01)));
+    poles[0] = blt(M_PI * 2 * warped_alpha * pole);
+    poles[1] = blt(M_PI * 2 * warped_alpha * conj(pole));
 
     complex<double> topcoeffs[3];
     complex<double> botcoeffs[3];
     expand(zeros, 2, topcoeffs);
     expand(poles, 2, botcoeffs);
     complex<double> gain_complex = evaluate(topcoeffs, 2, botcoeffs, 2, 1.0);
-    gain = hypot(gain_complex.imag(), gain_complex.real());
+
+    BiquadSection& sec = sections_[section_idx];
+    sec.gain = (float)hypot(gain_complex.imag(), gain_complex.real());
 
     for (int i = 0; i <= 2; i++) {
-        ycoeffs[i] = -(botcoeffs[i].real() / botcoeffs[2].real());
+        sec.ycoeffs[i] = (float)(-(botcoeffs[i].real() / botcoeffs[2].real()));
     }
 
-    debug_print("gain: %f, ycoeffs: {%f, %f}\n", gain, ycoeffs[0], ycoeffs[1]);
+    sec.xv[0] = sec.xv[1] = sec.xv[2] = complex<float>(0.0f, 0.0f);
+    sec.yv[0] = sec.yv[1] = sec.yv[2] = complex<float>(0.0f, 0.0f);
+
+    debug_print("  section %d: gain=%f, ycoeffs={%f, %f}\n", section_idx, sec.gain, sec.ycoeffs[0], sec.ycoeffs[1]);
+}
+
+// Lowpass Bessel filter, order 2/4/6, implemented as cascaded biquad sections.
+// Based on https://www-users.cs.york.ac.uk/~fisher/mkfilter/
+LowpassFilter::LowpassFilter(float freq, float sample_freq, int order) : enabled_(true), num_sections_(0) {
+    if (freq <= 0.0) {
+        debug_print("Invalid frequency %f Hz, disabling lowpass filter\n", freq);
+        enabled_ = false;
+        return;
+    }
+
+    const complex<double>* poles;
+    switch (order) {
+        case 2:
+            poles = bessel_poles_2;
+            num_sections_ = 1;
+            break;
+        case 4:
+            poles = bessel_poles_4;
+            num_sections_ = 2;
+            break;
+        case 6:
+            poles = bessel_poles_6;
+            num_sections_ = 3;
+            break;
+        default:
+            debug_print("Unsupported filter order %d, using order 2\n", order);
+            poles = bessel_poles_2;
+            num_sections_ = 1;
+            break;
+    }
+
+    debug_print("Adding lowpass filter at %f Hz, sample rate %f, order %d (%d sections)\n", freq, sample_freq, order, num_sections_);
+
+    for (int i = 0; i < num_sections_; i++) {
+        init_section(i, poles[i], freq, sample_freq);
+    }
 }
 
 complex<double> LowpassFilter::blt(complex<double> pz) {
@@ -148,16 +204,24 @@ void LowpassFilter::apply(float& r, float& j) {
         return;
     }
 
-    complex<float> input(r, j);
+    complex<float> signal(r, j);
 
-    xv[0] = xv[1];
-    xv[1] = xv[2];
-    xv[2] = input / gain;
+    // Cascade through each biquad section
+    for (int s = 0; s < num_sections_; s++) {
+        BiquadSection& sec = sections_[s];
 
-    yv[0] = yv[1];
-    yv[1] = yv[2];
-    yv[2] = (xv[0] + xv[2]) + (2.0f * xv[1]) + (ycoeffs[0] * yv[0]) + (ycoeffs[1] * yv[1]);
+        sec.xv[0] = sec.xv[1];
+        sec.xv[1] = sec.xv[2];
+        sec.xv[2] = signal / sec.gain;
 
-    r = yv[2].real();
-    j = yv[2].imag();
+        sec.yv[0] = sec.yv[1];
+        sec.yv[1] = sec.yv[2];
+        sec.yv[2] = (sec.xv[0] + sec.xv[2]) + (2.0f * sec.xv[1]) + (sec.ycoeffs[0] * sec.yv[0]) + (sec.ycoeffs[1] * sec.yv[1]);
+
+        // Output of this section feeds into the next
+        signal = sec.yv[2];
+    }
+
+    r = signal.real();
+    j = signal.imag();
 }

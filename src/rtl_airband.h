@@ -284,6 +284,7 @@ struct device_t {
 #endif /* NFM */
     int channel_count;
     size_t *base_bins, *bins;
+    int* extract_bins;  // per-channel number of FFT bins to sum (1 = single bin, 3 = center ± 1, etc.)
     channel_t* channels;
     // FIXME: size_t
     int waveend;

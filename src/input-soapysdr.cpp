@@ -71,6 +71,45 @@ matched:
     return true;
 }
 
+// Check if device_string indicates an Airspy device (case-insensitive substring match).
+// Airspy devices produce 12-bit samples internally; 8-bit formats discard precision.
+static bool soapysdr_is_high_precision_device(char const* const device_string) {
+    if (device_string == NULL) return false;
+    const char* p = device_string;
+    while (*p) {
+        if ((*p == 'a' || *p == 'A') && strncasecmp(p, "airspy", 6) == 0) {
+            return true;
+        }
+        p++;
+    }
+    return false;
+}
+
+// Try to match a specific format from the device's supported format list.
+// Returns true if the format is supported and was successfully set.
+static bool soapysdr_try_format(SoapySDRDevice* const sdr, input_t* const input, char const* const target_fmt) {
+    soapysdr_dev_data_t* dev_data = (soapysdr_dev_data_t*)input->dev_data;
+    // Check if target_fmt is the native format
+    double fullscale = 0.0;
+    char* native_fmt = SoapySDRDevice_getNativeStreamFormat(sdr, SOAPY_SDR_RX, dev_data->channel, &fullscale);
+    if (strcmp(native_fmt, target_fmt) == 0) {
+        if (soapysdr_match_sfmt(input, native_fmt, fullscale)) {
+            return true;
+        }
+    }
+    // Check if it's available as a non-native format
+    size_t len = 0;
+    char** formats = SoapySDRDevice_getStreamFormats(sdr, SOAPY_SDR_RX, dev_data->channel, &len);
+    if (formats != NULL) {
+        for (size_t i = 0; i < len; i++) {
+            if (strcmp(formats[i], target_fmt) == 0) {
+                return soapysdr_match_sfmt(input, formats[i], -1.0);
+            }
+        }
+    }
+    return false;
+}
+
 // Choose a suitable sample format.
 // Bail out if no supported sample format is found.
 static bool soapysdr_choose_sample_format(SoapySDRDevice* const sdr, input_t* const input) {
@@ -79,14 +118,34 @@ static bool soapysdr_choose_sample_format(SoapySDRDevice* const sdr, input_t* co
     char** formats = NULL;
     soapysdr_dev_data_t* dev_data = (soapysdr_dev_data_t*)input->dev_data;
     input->sfmt = SFMT_UNDEF;
-    // First try device's native format to avoid extra conversion
-    double fullscale = 0.0;
-    char* fmt = SoapySDRDevice_getNativeStreamFormat(sdr, SOAPY_SDR_RX, dev_data->channel, &fullscale);
 
-    if (soapysdr_match_sfmt(input, fmt, fullscale) == true) {
-        log(LOG_NOTICE, "SoapySDR: device '%s': using native sample format '%s' (fullScale=%.1f)\n", dev_data->device_string, fmt, input->fullscale);
-        ret = true;
-        goto end;
+    bool prefer_high_precision = soapysdr_is_high_precision_device(dev_data->device_string);
+
+    // If the device benefits from high-precision formats (e.g. Airspy with 12-bit ADC),
+    // try higher-precision formats first to avoid discarding dynamic range.
+    if (prefer_high_precision) {
+        // Preferred order: CF32 > CS16 > native fallback
+        char const* preferred[] = {SOAPY_SDR_CF32, SOAPY_SDR_CS16};
+        for (size_t i = 0; i < 2; i++) {
+            if (soapysdr_try_format(sdr, input, preferred[i])) {
+                log(LOG_NOTICE, "SoapySDR: device '%s': using high-precision sample format '%s' (fullScale=%.1f)\n", dev_data->device_string, preferred[i], input->fullscale);
+                ret = true;
+                goto end;
+            }
+        }
+        log(LOG_NOTICE, "SoapySDR: device '%s': high-precision formats not available, falling back\n", dev_data->device_string);
+    }
+
+    // Default path: try device's native format first to avoid extra conversion
+    {
+        double fullscale = 0.0;
+        char* fmt = SoapySDRDevice_getNativeStreamFormat(sdr, SOAPY_SDR_RX, dev_data->channel, &fullscale);
+
+        if (soapysdr_match_sfmt(input, fmt, fullscale) == true) {
+            log(LOG_NOTICE, "SoapySDR: device '%s': using native sample format '%s' (fullScale=%.1f)\n", dev_data->device_string, fmt, input->fullscale);
+            ret = true;
+            goto end;
+        }
     }
     // Native format is not supported by rtl_airband; find out if there is anything else.
     formats = SoapySDRDevice_getStreamFormats(sdr, SOAPY_SDR_RX, dev_data->channel, &len);
@@ -198,7 +257,17 @@ int soapysdr_parse_config(input_t* const input, libconfig::Setting& cfg) {
         log(LOG_ERR, "Failed to open SoapySDR device '%s': %s\n", dev_data->device_string, SoapySDRDevice_lastError());
         error();
     }
-    if (soapysdr_choose_sample_format(sdr, input) == false) {
+    // If sample_format is explicitly set in config, try to use that format.
+    // Valid values: "CU8", "CS8", "CS16", "CF32"
+    if (cfg.exists("sample_format")) {
+        char const* requested_fmt = cfg["sample_format"];
+        if (soapysdr_try_format(sdr, input, requested_fmt)) {
+            log(LOG_NOTICE, "SoapySDR: device '%s': using requested sample format '%s' (fullScale=%.1f)\n", dev_data->device_string, requested_fmt, input->fullscale);
+        } else {
+            cerr << "SoapySDR configuration error: device '" << dev_data->device_string << "': requested sample_format '" << requested_fmt << "' is not supported by device\n";
+            error();
+        }
+    } else if (soapysdr_choose_sample_format(sdr, input) == false) {
         cerr << "SoapySDR configuration error: device '" << dev_data->device_string << "': no suitable sample format found\n";
         error();
     }
