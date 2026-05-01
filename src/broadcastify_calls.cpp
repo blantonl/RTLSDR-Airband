@@ -18,16 +18,16 @@
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <cstring>
-#include <cstdlib>
-#include <cstdio>
-#include <cassert>
-#include <queue>
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <lame/lame.h>
 #include <curl/curl.h>
+#include <lame/lame.h>
+#include <pthread.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <queue>
 
 #include "rtl_airband.h"
 
@@ -71,7 +71,8 @@ static size_t bcfy_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata
     if (ctx->len + bytes >= ctx->capacity) {
         size_t new_cap = ctx->capacity * 2 + bytes;
         char* new_buf = (char*)realloc(ctx->buf, new_cap);
-        if (!new_buf) return 0;
+        if (!new_buf)
+            return 0;
         ctx->buf = new_buf;
         ctx->capacity = new_cap;
     }
@@ -91,7 +92,8 @@ static size_t bcfy_read_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
     struct curl_read_ctx* ctx = (struct curl_read_ctx*)userdata;
     size_t remaining = ctx->len - ctx->offset;
     size_t to_copy = size * nmemb;
-    if (to_copy > remaining) to_copy = remaining;
+    if (to_copy > remaining)
+        to_copy = remaining;
     memcpy(ptr, ctx->data + ctx->offset, to_copy);
     ctx->offset += to_copy;
     return to_copy;
@@ -128,10 +130,7 @@ static unsigned char* encode_mp3(bcfy_call_record* rec, size_t* out_len) {
         return NULL;
     }
 
-    int mp3_bytes = lame_encode_buffer_ieee_float(
-        lame, rec->samples, NULL, (int)rec->sample_count,
-        mp3_buf, (int)mp3_buf_size
-    );
+    int mp3_bytes = lame_encode_buffer_ieee_float(lame, rec->samples, NULL, (int)rec->sample_count, mp3_buf, (int)mp3_buf_size);
 
     if (mp3_bytes < 0) {
         log(LOG_ERR, "Broadcastify Calls: lame_encode_buffer_ieee_float returned %d\n", mp3_bytes);
@@ -213,7 +212,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
         curl_mime_data(part, "1", CURL_ZERO_TERMINATED);
     }
 
-    struct curl_write_ctx response = { NULL, 0, 0 };
+    struct curl_write_ctx response = {NULL, 0, 0};
     response.buf = (char*)malloc(512);
     response.capacity = 512;
     response.buf[0] = '\0';
@@ -231,8 +230,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
     curl_mime_free(mime);
     curl_easy_cleanup(curl);
 
-    log(LOG_INFO, "Broadcastify Calls: POST tg=%d freq=%d ts=%ld duration=%.1f -> HTTP %ld: %s\n",
-        rec->tg, rec->freq, (long)rec->ts, rec->duration, http_code,
+    log(LOG_INFO, "Broadcastify Calls: POST tg=%d freq=%d ts=%ld duration=%.1f -> HTTP %ld: %s\n", rec->tg, rec->freq, (long)rec->ts, rec->duration, http_code,
         (res == CURLE_OK && response.buf) ? response.buf : curl_easy_strerror(res));
 
     if (res != CURLE_OK) {
@@ -263,8 +261,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
     if (response.buf[0] == '1' && response.buf[1] == ' ') {
         const char* msg = response.buf + 2;
         if (strstr(msg, "SKIPPED---ALREADY-RECEIVED-THIS-CALL") != NULL) {
-            log(LOG_INFO, "Broadcastify Calls: call skipped (duplicate): tg=%d freq=%d ts=%ld\n",
-                rec->tg, rec->freq, (long)rec->ts);
+            log(LOG_INFO, "Broadcastify Calls: call skipped (duplicate): tg=%d freq=%d ts=%ld\n", rec->tg, rec->freq, (long)rec->ts);
             free(response.buf);
             return UPLOAD_SUCCESS;  // not an error, another source already uploaded this call
         }
@@ -302,7 +299,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
         return UPLOAD_FAIL_TRANSIENT;
     }
 
-    struct curl_read_ctx read_ctx = { mp3_data, mp3_len, 0 };
+    struct curl_read_ctx read_ctx = {mp3_data, mp3_len, 0};
 
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: audio/mpeg");
@@ -332,8 +329,7 @@ static enum upload_result do_upload(bcfy_call_record* rec, unsigned char* mp3_da
         return UPLOAD_FAIL_TRANSIENT;
     }
 
-    log(LOG_INFO, "Broadcastify Calls: uploaded call tg=%d freq=%d duration=%.1fs\n",
-        rec->tg, rec->freq, rec->duration);
+    log(LOG_INFO, "Broadcastify Calls: uploaded call tg=%d freq=%d duration=%.1fs\n", rec->tg, rec->freq, rec->duration);
     return UPLOAD_SUCCESS;
 }
 
@@ -355,11 +351,9 @@ static void encode_and_upload(bcfy_call_record* rec) {
     }
 
     if (result == UPLOAD_FAIL_PERMANENT) {
-        log(LOG_WARNING, "Broadcastify Calls: permanent failure uploading call tg=%d freq=%d, not retrying\n",
-            rec->tg, rec->freq);
+        log(LOG_WARNING, "Broadcastify Calls: permanent failure uploading call tg=%d freq=%d, not retrying\n", rec->tg, rec->freq);
     } else if (result == UPLOAD_FAIL_TRANSIENT) {
-        log(LOG_WARNING, "Broadcastify Calls: failed to upload call tg=%d freq=%d after %d attempts\n",
-            rec->tg, rec->freq, BCFY_RETRY_COUNT);
+        log(LOG_WARNING, "Broadcastify Calls: failed to upload call tg=%d freq=%d after %d attempts\n", rec->tg, rec->freq, BCFY_RETRY_COUNT);
     }
 
     free(mp3_data);
@@ -401,8 +395,7 @@ static void* upload_thread_func(void*) {
     pthread_mutex_lock(&queue_mutex);
     if (!upload_queue.empty()) {
         int remaining = (int)upload_queue.size();
-        log(LOG_INFO, "Broadcastify Calls: draining up to %d queued calls before shutdown\n",
-            remaining < BCFY_MAX_DRAIN_ON_SHUTDOWN ? remaining : BCFY_MAX_DRAIN_ON_SHUTDOWN);
+        log(LOG_INFO, "Broadcastify Calls: draining up to %d queued calls before shutdown\n", remaining < BCFY_MAX_DRAIN_ON_SHUTDOWN ? remaining : BCFY_MAX_DRAIN_ON_SHUTDOWN);
     }
     while (!upload_queue.empty() && drained < BCFY_MAX_DRAIN_ON_SHUTDOWN) {
         bcfy_call_record* rec = upload_queue.front();
@@ -450,8 +443,7 @@ static void finalize_call(bcfy_calls_data* bdata, output_t* output) {
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    double duration = (double)(now.tv_sec - bdata->call_start.tv_sec) +
-                      (double)(now.tv_usec - bdata->call_start.tv_usec) / 1000000.0;
+    double duration = (double)(now.tv_sec - bdata->call_start.tv_sec) + (double)(now.tv_usec - bdata->call_start.tv_usec) / 1000000.0;
 
     if (duration < (double)bdata->min_call_duration) {
         // Too short, discard
@@ -487,8 +479,7 @@ static void finalize_call(bcfy_calls_data* bdata, output_t* output) {
 
     output->active = false;
 
-    log(LOG_INFO, "Broadcastify Calls: call complete tg=%d freq=%d duration=%.1fs samples=%zu\n",
-        rec->tg, rec->freq, rec->duration, rec->sample_count);
+    log(LOG_INFO, "Broadcastify Calls: call complete tg=%d freq=%d duration=%.1fs samples=%zu\n", rec->tg, rec->freq, rec->duration, rec->sample_count);
 
     enqueue_call(rec, bdata->max_queue_depth);
 }
@@ -533,7 +524,8 @@ void bcfy_calls_process(channel_t* channel, output_t* output) {
         size_t needed = bdata->sample_buf_len + WAVE_BATCH;
         if (needed > bdata->sample_buf_capacity) {
             size_t new_cap = bdata->sample_buf_capacity * 2;
-            if (new_cap < needed) new_cap = needed;
+            if (new_cap < needed)
+                new_cap = needed;
             float* new_buf = (float*)realloc(bdata->sample_buf, new_cap * sizeof(float));
             if (!new_buf) {
                 log(LOG_ERR, "Broadcastify Calls: failed to grow sample buffer\n");

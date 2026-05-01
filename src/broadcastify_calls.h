@@ -32,7 +32,7 @@ struct bcfy_calls_data {
     int system_id;
     int tg;
     float min_call_duration;
-    int max_call_duration;    // seconds, 0 = no limit
+    int max_call_duration;  // seconds, 0 = no limit
     int max_queue_depth;
     bool use_dev_api;
     bool test_mode;
@@ -48,11 +48,11 @@ struct bcfy_calls_data {
 };
 
 struct bcfy_call_record {
-    float* samples;       // owned sample buffer
+    float* samples;  // owned sample buffer
     size_t sample_count;
     int sample_rate;
     double duration;
-    time_t ts;            // call start unix epoch
+    time_t ts;  // call start unix epoch
     int tg;
     int freq;             // frequency in Hz
     const char* api_key;  // not owned, points to config

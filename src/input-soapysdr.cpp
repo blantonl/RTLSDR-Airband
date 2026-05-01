@@ -74,7 +74,8 @@ matched:
 // Check if device_string indicates an Airspy device (case-insensitive substring match).
 // Airspy devices produce 12-bit samples internally; 8-bit formats discard precision.
 static bool soapysdr_is_high_precision_device(char const* const device_string) {
-    if (device_string == NULL) return false;
+    if (device_string == NULL)
+        return false;
     const char* p = device_string;
     while (*p) {
         if ((*p == 'a' || *p == 'A') && strncasecmp(p, "airspy", 6) == 0) {
